@@ -10,6 +10,10 @@
 const CFG = {
   SHOP_ADDRESS: "512 S 70th Street Kansas City KS 66111",
   SPEED_MPH: 55,
+  
+  // Configuration constants
+  MAX_PROPOSAL_ROWS: 2000,
+  CACHE_DURATION_SECONDS: 43200, // 12 hours
 
   SHEETS: {
     PROJ: "Project Details",
@@ -151,7 +155,10 @@ function syncTakeoffTotalsFromRaw() {
   });
 
   // Clear old body only (not header formatting)
-  shTake.getRange(2, 1, Math.max(1, shTake.getMaxRows() - 1), 6).clearContent();
+  const lastRow = shTake.getLastRow();
+  if (lastRow > 1) {
+    shTake.getRange(2, 1, lastRow - 1, 6).clearContent();
+  }
 
   // Paste new totals
   shTake.getRange(2, 1, rows.length, 6).setValues(rows);
@@ -306,13 +313,13 @@ function buildProposalTemplateOnce() {
   // QUERY returns 3 cols => A=QTY, B=DESC, C=SCOPE
   // We'll display scope also in D with a simple formula that references C
   sh.getRange("D12").setFormula(`=IF(C12="","",C12)`);
-  sh.getRange("D12:D2000").setFormulaR1C1("=IF(RC[-1]=\"\",\"\",RC[-1])"); // copy down
+  sh.getRange(`D12:D${CFG.MAX_PROPOSAL_ROWS}`).setFormulaR1C1("=IF(RC[-1]=\"\",\"\",RC[-1])"); // copy down
 
   // Formatting for readability
   sh.getRange("A11:E11").setBorder(false,false,true,false,false,false);
-  sh.getRange("A12:A2000").setHorizontalAlignment("center");
-  sh.getRange("B12:B2000").setWrap(true);
-  sh.getRange("D12:D2000").setFontColor("#555");
+  sh.getRange(`A12:A${CFG.MAX_PROPOSAL_ROWS}`).setHorizontalAlignment("center");
+  sh.getRange(`B12:B${CFG.MAX_PROPOSAL_ROWS}`).setWrap(true);
+  sh.getRange(`D12:D${CFG.MAX_PROPOSAL_ROWS}`).setFontColor("#555");
 
   // Work description block (live)
   sh.getRange("A30:E30").merge().setValue("WORK DESCRIPTION / INCLUDED CONDITIONS")
@@ -387,9 +394,16 @@ function WORK_BULLETS() {
    ========================================================= */
 
 function buildProjectDetailsForm() {
-  // If you already have your Project Details builder working, keep yours.
-  // This stub exists so menu doesn't break if you want it.
-  SpreadsheetApp.getUi().alert("Project Details builder is in your existing script. If you want, I can merge the full builder back in cleanly.");
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = getOrCreate_(ss, CFG.SHEETS.PROJ);
+  
+  // This is a placeholder function that can be expanded to build a complete Project Details form
+  // For now, it ensures the sheet exists
+  SpreadsheetApp.getUi().alert(
+    "Project Details Form\n\n" +
+    "This function can be customized to build your Project Details form layout.\n" +
+    "Currently, the sheet is created and available for manual data entry."
+  );
 }
 
 function ensureInstallDataSkeleton_() {
@@ -576,12 +590,12 @@ function normalizeTakeoffCode_(raw) {
   // Manufacturer letter + 4 digits e.g. B1234
   const mfrDigits = up.match(/\b([A-Z])\s*[- ]?\s*([0-9]{4})\b/);
 
-  // Grab bar length e.g. "GB 36"
+  // Grab bar length e.g. "GB 36" - preserve leading zeros
   const gbLen = up.match(/\bGB\b\s*([0-9]{2})\b/) || up.match(/\bGB([0-9]{2})\b/);
 
   if (up.includes("GB")) {
     if (mfrDigits) return { skuKey: `${mfrDigits[1]}${mfrDigits[2]}` };
-    if (gbLen) return { skuKey: `GB${Number(gbLen[1])}` };
+    if (gbLen) return { skuKey: `GB${gbLen[1]}` }; // Keep as string to preserve leading zeros
   }
   if (mfrDigits) return { skuKey: `${mfrDigits[1]}${mfrDigits[2]}` };
 
@@ -694,7 +708,7 @@ function SHOP_MILES(destinationAddress) {
 
   const meters = legs[0].distance && legs[0].distance.value ? Number(legs[0].distance.value) : 0;
   const miles = meters ? (meters / 1609.344) : "";
-  if (miles !== "") cache.put(key, String(miles), 60 * 60 * 12);
+  if (miles !== "") cache.put(key, String(miles), CFG.CACHE_DURATION_SECONDS);
 
   return miles === "" ? "" : Math.round(miles * 10) / 10;
 }
