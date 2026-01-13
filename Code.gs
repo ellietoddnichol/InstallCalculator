@@ -9,7 +9,7 @@
 
 const CFG = {
   SHOP_ADDRESS: "512 S 70th Street Kansas City KS 66111",
-  SPEED_MPH: 55,
+  SPEED_MPH: 55, // Reserved for future travel time calculations
   
   // Configuration constants
   MAX_PROPOSAL_ROWS: 2000,
@@ -350,7 +350,9 @@ function buildProposalTemplateOnce() {
     ps.setBottomMargin(0.5);
     ps.setLeftMargin(0.5);
     ps.setRightMargin(0.5);
-  } catch (e) {}
+  } catch (e) {
+    // Page setup methods may not be available in all contexts, safely ignore
+  }
 
   SpreadsheetApp.getUi().alert("✅ Proposal Template built. It's LIVE now. Use Full Sync (Data Only) to update totals.");
 }
@@ -560,7 +562,7 @@ function aggregateFromRaw_(ss) {
       totals.set(skuKey, (totals.get(skuKey) || 0) + qty);
     }
     return Array.from(totals, ([sku, qty]) => ({ sku, qty }))
-      .sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));
+      .sort((a, b) => String(a.sku).localeCompare(String(b.sku)));
   }
 
   // Matrix-style raw (headers are codes, body are quantities)
@@ -585,7 +587,7 @@ function aggregateFromRaw_(ss) {
   }
 
   return Array.from(totals, ([sku, qty]) => ({ sku, qty }))
-    .sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));
+    .sort((a, b) => String(a.sku).localeCompare(String(b.sku)));
 }
 
 /* =========================================================
