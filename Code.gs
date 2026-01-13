@@ -14,6 +14,8 @@ const CFG = {
   // Configuration constants
   MAX_PROPOSAL_ROWS: 2000,
   CACHE_DURATION_SECONDS: 43200, // 12 hours
+  PROPOSAL_TEMPLATE_MIN_ROWS: 10, // Minimum rows to consider template as already built
+  METERS_PER_MILE: 1609.344,
 
   SHEETS: {
     PROJ: "Project Details",
@@ -239,7 +241,7 @@ function buildProposalTemplateOnce() {
   const already = String(sh.getRange("A1").getValue() || "").includes("BRIGHTEN INSTALLATION");
 
   // Only build if empty or user explicitly wants rebuild
-  if (already && sh.getLastRow() > 10) {
+  if (already && sh.getLastRow() > CFG.PROPOSAL_TEMPLATE_MIN_ROWS) {
     SpreadsheetApp.getUi().alert("Proposal template already exists. It is LIVE. Use Full Sync (Data Only).");
     return;
   }
@@ -304,10 +306,8 @@ function buildProposalTemplateOnce() {
   // Live formula starts row 12
   // Uses Install Data columns: A=QTY, C=DESC, D=SCOPE
   // Groups by Scope+Description so it behaves like totals and is stable for printing
-  sh.getRange("A12").setFormula(
-    `=IFERROR(QUERY({'${CFG.SHEETS.INSTALL}'!A3:A,'${CFG.SHEETS.INSTALL}'!C3:C,'${CFG.SHEETS.INSTALL}'!D3:D},
-      "select sum(Col1), Col2, Col3 where Col1>0 group by Col2, Col3 label sum(Col1) 'QTY', Col2 'DESCRIPTION', Col3 'SCOPE' ",0),"")`
-  );
+  const proposalQuery = buildProposalQueryFormula_(CFG.SHEETS.INSTALL);
+  sh.getRange("A12").setFormula(proposalQuery);
 
   // Make the QUERY results land into A:C and we map to A,B,D visually:
   // QUERY returns 3 cols => A=QTY, B=DESC, C=SCOPE
@@ -353,6 +353,15 @@ function buildProposalTemplateOnce() {
   } catch (e) {}
 
   SpreadsheetApp.getUi().alert("✅ Proposal Template built. It's LIVE now. Use Full Sync (Data Only) to update totals.");
+}
+
+/**
+ * Builds the QUERY formula for the Proposal sheet to pull data from Install Data.
+ * Extracts and groups items by Scope and Description for stable printing.
+ */
+function buildProposalQueryFormula_(installSheetName) {
+  return `=IFERROR(QUERY({'${installSheetName}'!A3:A,'${installSheetName}'!C3:C,'${installSheetName}'!D3:D},
+    "select sum(Col1), Col2, Col3 where Col1>0 group by Col2, Col3 label sum(Col1) 'QTY', Col2 'DESCRIPTION', Col3 'SCOPE' ",0),"")`;
 }
 
 /**
@@ -590,8 +599,8 @@ function normalizeTakeoffCode_(raw) {
   // Manufacturer letter + 4 digits e.g. B1234
   const mfrDigits = up.match(/\b([A-Z])\s*[- ]?\s*([0-9]{4})\b/);
 
-  // Grab bar length e.g. "GB 36" - preserve leading zeros
-  const gbLen = up.match(/\bGB\b\s*([0-9]{2})\b/) || up.match(/\bGB([0-9]{2})\b/);
+  // Grab bar length e.g. "GB 36" or "GB36" - preserve leading zeros
+  const gbLen = up.match(/\bGB\s*([0-9]{2})\b/);
 
   if (up.includes("GB")) {
     if (mfrDigits) return { skuKey: `${mfrDigits[1]}${mfrDigits[2]}` };
@@ -694,21 +703,26 @@ function SHOP_MILES(destinationAddress) {
   const cached = cache.get(key);
   if (cached) return Number(cached);
 
-  const dir = Maps.newDirectionFinder()
-    .setOrigin(CFG.SHOP_ADDRESS)
-    .setDestination(dest)
-    .setMode(Maps.DirectionFinder.Mode.DRIVING);
+  try {
+    const dir = Maps.newDirectionFinder()
+      .setOrigin(CFG.SHOP_ADDRESS)
+      .setDestination(dest)
+      .setMode(Maps.DirectionFinder.Mode.DRIVING);
 
-  const res = dir.getDirections();
-  const routes = (res && res.routes) ? res.routes : [];
-  if (!routes.length) return "";
+    const res = dir.getDirections();
+    const routes = (res && res.routes) ? res.routes : [];
+    if (!routes.length) return "";
 
-  const legs = routes[0].legs || [];
-  if (!legs.length) return "";
+    const legs = routes[0].legs || [];
+    if (!legs.length) return "";
 
-  const meters = legs[0].distance && legs[0].distance.value ? Number(legs[0].distance.value) : 0;
-  const miles = meters ? (meters / 1609.344) : "";
-  if (miles !== "") cache.put(key, String(miles), CFG.CACHE_DURATION_SECONDS);
+    const meters = legs[0].distance && legs[0].distance.value ? Number(legs[0].distance.value) : 0;
+    const miles = meters ? (meters / CFG.METERS_PER_MILE) : "";
+    if (miles !== "") cache.put(key, String(miles), CFG.CACHE_DURATION_SECONDS);
 
-  return miles === "" ? "" : Math.round(miles * 10) / 10;
+    return miles === "" ? "" : Math.round(miles * 10) / 10;
+  } catch (e) {
+    Logger.log(`SHOP_MILES error: ${e.message}`);
+    return ""; // Return empty string if Maps API fails
+  }
 }
